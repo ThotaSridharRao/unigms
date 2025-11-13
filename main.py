@@ -172,7 +172,9 @@ from models import (
     AdminTicketUpdate,
     TicketMessage,
     TicketStats,
-    AdminWithdrawalAction
+    AdminWithdrawalAction,
+    RoomDetails,
+    RoomDetailsResponse
 )
 
 from content_moderation_service import (
@@ -3173,6 +3175,172 @@ async def add_tournament_update(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to add tournament update"
+        )
+
+# Room Details Endpoints
+@app.post("/api/tournaments/{slug}/room-details", dependencies=[Depends(require_admin)])
+async def add_room_details(
+    slug: str,
+    room_details: RoomDetails,
+    auth: HTTPAuthorizationCredentials = Security(security)
+):
+    """Add room details for a tournament round (admin only)"""
+    try:
+        # Get admin user info from token
+        payload = verify_jwt_token(auth.credentials)
+        admin_email = payload.get("email", "unknown")
+        
+        # Get tournament from database
+        db = get_database()
+        tournaments_collection = db.tournaments
+        tournament = tournaments_collection.find_one({"slug": slug})
+        if not tournament:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tournament not found"
+            )
+        
+        # Initialize room_details field if it doesn't exist
+        if "room_details" not in tournament:
+            tournament["room_details"] = {}
+        
+        # Add the new room details
+        room_data = {
+            "matchTime": room_details.matchTime,
+            "roomId": room_details.roomId,
+            "password": room_details.password,
+            "timestamp": datetime.utcnow().isoformat(),
+            "addedBy": admin_email
+        }
+        
+        # Update tournament with room details
+        result = tournaments_collection.update_one(
+            {"slug": slug},
+            {
+                "$set": {
+                    f"room_details.{room_details.round}": room_data
+                }
+            }
+        )
+        
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to add room details"
+            )
+        
+        # Log the operation
+        log_tournament_operation("ADD_ROOM_DETAILS", slug, admin_email, f"Round: {room_details.round}")
+        
+        return RoomDetailsResponse(
+            success=True,
+            message="Room details added successfully",
+            data=room_data
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Room details error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to add room details"
+        )
+
+
+@app.get("/api/tournaments/{slug}/room-details")
+async def get_room_details(slug: str):
+    """Get room details for a tournament (public endpoint)"""
+    try:
+        # Get tournament from database
+        db = get_database()
+        tournaments_collection = db.tournaments
+        tournament = tournaments_collection.find_one({"slug": slug})
+        if not tournament:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tournament not found"
+            )
+        
+        # Get room details or return empty dict
+        room_details = tournament.get("room_details", {})
+        
+        return RoomDetailsResponse(
+            success=True,
+            message="Room details retrieved successfully",
+            data=room_details
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Get room details error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get room details"
+        )
+
+
+@app.delete("/api/tournaments/{slug}/room-details/{round_name}", dependencies=[Depends(require_admin)])
+async def delete_room_details(
+    slug: str,
+    round_name: str,
+    auth: HTTPAuthorizationCredentials = Security(security)
+):
+    """Delete room details for a specific round (admin only)"""
+    try:
+        # Get admin user info from token
+        payload = verify_jwt_token(auth.credentials)
+        admin_email = payload.get("email", "unknown")
+        
+        # Get tournament from database
+        db = get_database()
+        tournaments_collection = db.tournaments
+        tournament = tournaments_collection.find_one({"slug": slug})
+        if not tournament:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tournament not found"
+            )
+        
+        # Check if room details exist for this round
+        if "room_details" not in tournament or round_name not in tournament["room_details"]:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Room details not found for this round"
+            )
+        
+        # Remove the room details for this round
+        result = tournaments_collection.update_one(
+            {"slug": slug},
+            {
+                "$unset": {
+                    f"room_details.{round_name}": ""
+                }
+            }
+        )
+        
+        if result.modified_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to delete room details"
+            )
+        
+        # Log the operation
+        log_tournament_operation("DELETE_ROOM_DETAILS", slug, admin_email, f"Round: {round_name}")
+        
+        return RoomDetailsResponse(
+            success=True,
+            message="Room details deleted successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Delete room details error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete room details"
         )
 
 # Combined endpoint for both hosted and joined tournaments

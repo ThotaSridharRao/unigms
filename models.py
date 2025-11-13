@@ -844,3 +844,45 @@ class AdminWithdrawalAction(BaseModel):
     """Model for admin action on a withdrawal request"""
     action: str = Field(..., pattern=r"^(complete|fail)$", description="Action to take: 'complete' or 'fail'")
     notes: Optional[str] = Field(None, max_length=500, description="Admin notes regarding the decision")
+
+
+class RoomDetails(BaseModel):
+    """Model for room details"""
+    round: str = Field(..., min_length=1, max_length=100, description="Round or match name")
+    matchTime: str = Field(..., description="Match start time in ISO format")
+    roomId: str = Field(..., min_length=1, max_length=50, description="Room/Lobby ID")
+    password: str = Field(..., min_length=1, max_length=50, description="Room/Match password")
+
+    @field_validator("round")
+    @classmethod
+    def validate_round(cls, v: str) -> str:
+        """Validate round name"""
+        v = v.strip()
+        if len(v) < 1:
+            raise ValueError("Round name cannot be empty")
+        return v
+
+    @field_validator("roomId")
+    @classmethod
+    def validate_room_id(cls, v: str) -> str:
+        """Validate room ID"""
+        v = v.strip()
+        if len(v) < 1:
+            raise ValueError("Room ID cannot be empty")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_field(cls, v: str) -> str:
+        """Validate password"""
+        v = v.strip()
+        if len(v) < 1:
+            raise ValueError("Password cannot be empty")
+        return v
+
+
+class RoomDetailsResponse(BaseModel):
+    """Model for room details response"""
+    success: bool
+    message: str
+    data: Optional[Dict[str, Any]] = None
